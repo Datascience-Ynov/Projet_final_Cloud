@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
 import os
 import uuid
 import json
@@ -13,10 +14,19 @@ from sklearn.neural_network import MLPClassifier
 from xgboost import XGBClassifier
 import optuna
 
-MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
+MLFLOW_TRACKING_URI = "http://mlflow-server-mlops-sadiya-mourad.francecentral.azurecontainer.io:5000/"
 MLFLOW_MODEL_URI = os.getenv("MLFLOW_MODEL_URI", "models:/fashion-mnist-sklearn/Production")
 
 app = FastAPI(title="MLOps Backend")
+
+# Configuration CORS pour permettre les requêtes depuis Heroku
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # En production, remplacer par l'URL exacte de Heroku
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 UPLOAD_DIR = "data/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)

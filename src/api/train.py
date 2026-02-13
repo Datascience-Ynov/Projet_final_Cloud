@@ -8,7 +8,7 @@ from sklearn.metrics import accuracy_score
 import mlflow
 import mlflow.sklearn
 
-MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow-server-mlops-sadiya-mourad.francecentral.azurecontainer.io:5000/")
 EXPERIMENT_NAME = os.getenv("EXPERIMENT_NAME", "Fashion_MNIST_Training")
 DATA_PATH = os.getenv("DATA_PATH", "data/fashion_mnist_agnostic.npz")
 

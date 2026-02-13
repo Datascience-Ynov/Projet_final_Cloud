@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies for MCP stdio and some python packages
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
@@ -11,9 +11,8 @@ COPY src/api/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src/api ./api
-COPY src/mcp_server ./mcp_server
 
-ENV MLFLOW_TRACKING_URI=http://localhost:5000
+ENV MLFLOW_TRACKING_URI=http://mlflow:5000
 ENV MLFLOW_MODEL_URI=models:/fashion-mnist-sklearn/Production
 
 EXPOSE 8000

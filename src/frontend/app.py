@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import os
+import json
 import numpy as np
 import time
 
@@ -14,9 +15,8 @@ MLFLOW_URL = os.getenv("MLFLOW_URL", "http://localhost:5000")
 
 # Sidebar for configuration
 with st.sidebar:
-    st.header("1. Upload Assets")
+    st.header("1. Upload Dataset")
     uploaded_dataset = st.file_uploader("Upload Dataset (.npz)", type=["npz"])
-    uploaded_model = st.file_uploader("Upload Model (.pkl, .pth, .h5)", type=["pkl", "pth", "h5"])
     
     if uploaded_dataset:
         if st.button("Upload Dataset"):
@@ -26,18 +26,40 @@ with st.sidebar:
                 st.session_state["data_path"] = response.json()["file_path"]
                 st.success("Dataset uploaded!")
     
-    if uploaded_model:
-        if st.button("Upload Model"):
-            response = requests.post(f"{BACKEND_URL}/upload-model", files={"file": (uploaded_model.name, uploaded_model.getvalue())})
-            if response.status_code == 200:
-                st.session_state["model_path"] = response.json()["model_path"]
-                st.success("Model uploaded!")
+    st.divider()
+    st.header("2. Select Model")
+    
+    # Fetch models from MLflow
+    try:
+        models_response = requests.get(f"{BACKEND_URL}/models")
+        if models_response.status_code == 200:
+            models_data = models_response.json()
+            if models_data["status"] == "success" and models_data["models"]:
+                model_options = []
+                model_uris = {}
+                
+                for model in models_data["models"]:
+                    for version in model["versions"]:
+                        label = f"{model['name']} v{version['version']} ({version['stage']})"
+                        uri = version.get("stage_uri") or version["uri"]
+                        model_options.append(label)
+                        model_uris[label] = uri
+                
+                selected_model = st.selectbox("Available Models", model_options)
+                st.session_state["selected_model_uri"] = model_uris.get(selected_model)
+                st.info(f"URI: `{st.session_state['selected_model_uri']}`")
+            else:
+                st.warning("No models found in MLflow. Train a model first!")
+        else:
+            st.error("Failed to fetch models from MLflow")
+    except Exception as e:
+        st.error(f"Error connecting to backend: {e}")
 
 # Main area
 col1, col2 = st.columns(2)
 
 with col1:
-    st.header("2. Configure Optimization")
+    st.header("3. Configure Optimization")
     model_name = st.selectbox("Model Type", ["SVC", "Random_Forest", "MLP", "XGBoost"])
     strategy = st.radio("Search Strategy", ["Grid", "Random", "Bayesian"])
     
@@ -71,7 +93,7 @@ with col1:
                 st.rerun()
 
 with col2:
-    st.header("3. Results & Tracking")
+    st.header("4. Results & Tracking")
     if "job_started" in st.session_state:
         st.write("🔄 Optimization in progress...")
         
@@ -81,26 +103,26 @@ with col2:
             result = st.session_state["last_result"]
             if result.get("status") == "success":
                 st.success("Optimization Complete!")
-                data = result["result"]
-                # MCP Tool returns data inside a 'content' list usually, 
-                # but our wrapper in FastAPI simplified it.
+                res_data = result["result"]
                 
-                # If it's the raw MCP tool output
-                if "content" in data:
-                    res_json = json.loads(data["content"][0]["text"])
-                else:
-                    res_json = data
-                
-                st.metric("Best Score (Accuracy)", f"{res_json.get('best_score', 0):.4f}")
+                st.metric("Best Score (Accuracy)", f"{res_data.get('best_score', 0):.4f}")
                 st.subheader("Best Parameters")
-                st.json(res_json.get("best_params", {}))
+                st.json(res_data.get("best_params", {}))
                 
-                if "run_id" in res_json:
-                    st.info(f"MLflow Run ID: {res_json['run_id']}")
+                if "run_id" in res_data:
+                    st.info(f"MLflow Run ID: {res_data['run_id']}")
             else:
                 st.error(f"Optimization failed: {result.get('message', 'Unknown error')}")
                 
-        st.markdown(f"[Go to MLflow UI]({MLFLOW_URL})")
+        # Link to MLflow experiment
+        if "last_result" in st.session_state and st.session_state["last_result"].get("status") == "success":
+            experiment_id = st.session_state["last_result"]["result"].get("experiment_id")
+            if experiment_id:
+                st.markdown(f"[📊 View Experiment in MLflow]({MLFLOW_URL}/#/experiments/{experiment_id})")
+            else:
+                st.markdown(f"[Go to MLflow UI]({MLFLOW_URL})")
+        else:
+            st.markdown(f"[Go to MLflow UI]({MLFLOW_URL})")
     else:
         st.info("No optimization running. Configuration needed.")
 
@@ -108,23 +130,36 @@ st.divider()
 st.caption("Agnostic MLOps Pipeline with MCP & MLflow")
 
 st.divider()
-st.header("4. Prediction")
+st.header("5. Prediction")
 st.markdown("Enter features as comma-separated values. One row = one prediction.")
+
+if "selected_model_uri" in st.session_state:
+    st.info(f"Using model: `{st.session_state['selected_model_uri']}`")
+
 feature_rows = st.text_area("Features", value="")
 if st.button("Predict"):
-    rows = [r.strip() for r in feature_rows.split("\n") if r.strip()]
-    try:
-        features = [
-            [float(x) for x in row.split(",") if x.strip() != ""]
-            for row in rows
-        ]
-        if not features:
-            st.error("Please enter at least one row of numeric features.")
-        else:
-            response = requests.post(f"{BACKEND_URL}/predict", json={"features": features})
-            if response.status_code == 200:
-                st.json(response.json())
+    if "selected_model_uri" not in st.session_state:
+        st.error("Please select a model from the sidebar first!")
+    else:
+        rows = [r.strip() for r in feature_rows.split("\n") if r.strip()]
+        try:
+            features = [
+                [float(x) for x in row.split(",") if x.strip() != ""]
+                for row in rows
+            ]
+            if not features:
+                st.error("Please enter at least one row of numeric features.")
             else:
-                st.error(f"Prediction failed: {response.text}")
-    except ValueError:
-        st.error("All feature values must be numeric.")
+                payload = {
+                    "features": features,
+                    "model_uri": st.session_state["selected_model_uri"]
+                }
+                response = requests.post(f"{BACKEND_URL}/predict", json=payload)
+                if response.status_code == 200:
+                    result = response.json()
+                    st.success("Prediction successful!")
+                    st.json(result)
+                else:
+                    st.error(f"Prediction failed: {response.text}")
+        except ValueError:
+            st.error("All feature values must be numeric.")

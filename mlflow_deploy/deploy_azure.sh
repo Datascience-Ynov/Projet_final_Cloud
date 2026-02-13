@@ -41,7 +41,7 @@ az container create \
   --memory 2 \
   --dns-name-label $APP_NAME \
   --ports 5000 \
-  --command-line "mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri sqlite:///mlflow.db --default-artifact-root /mlflow/artifacts --allowed-hosts '*'"
+  --command-line "mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri sqlite:///tmp/mlflow.db --default-artifact-root /tmp/mlartifacts --allowed-hosts '*'"
 
 # 5. Attendre que le conteneur soit prêt
 echo -e "\n5. Attente du démarrage du conteneur..."

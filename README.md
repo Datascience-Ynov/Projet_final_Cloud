@@ -1,6 +1,6 @@
 # 🚀 Agnostic MLOps Model Optimizer
 
-This project provides a modern, modular architecture for optimizing machine learning models (PyTorch, Sklearn, TensorFlow) using **MCP (Model Context Protocol)** for task orchestration and **MLflow** for experiment tracking.
+This project provides a modern, modular architecture for optimizing machine learning models (PyTorch, Sklearn, TensorFlow) with **MLflow** for experiment tracking and model registry.
 
 ## ✅ Objectif (selon consignes)
 
@@ -20,26 +20,30 @@ Tous les projets sont déposés sur GitHub et les liens sont référencés dans 
 ## 🧩 Conformité attendue
 
 ### Cibles de déploiement (choix du groupe)
-- Front : Azure
+- Front : Heroku
 - Back : GCP
 - MLflow : Azure
 
 ### Front – Streamlit (déploiement séparé)
 - Envoie les données utilisateur vers l’API.
-- Contient : `requirements.txt`, `Dockerfile`, `push.sh`, fichier principal.
-- Déployé sur : Azure.
+- Contient : `requirements.txt`, `Dockerfile`, `deploy_heroku.sh`, `app.py`.
+- Déployé sur : **Heroku Container Registry**
+- Variables d'environnement : `BACKEND_URL`, `MLFLOW_URL`
 
-### Back – FastAPI ou MCP (déploiement séparé)
+### Back – FastAPI (déploiement séparé)
 - Reçoit les données du front, appelle le modèle, renvoie la prédiction.
-- Contient : `requirements.txt`, `Dockerfile`, `push.sh`, fichier principal.
-- Utilise un modèle TensorFlow, PyTorch ou Sklearn provenant d’un serveur MLflow.
-- Déployé sur : GCP.
+- Contient : `requirements.txt`, `Dockerfile`, `deploy_gcp_local.sh`, `main.py`, `train.py`.
+- Utilise des modèles Sklearn provenant d'un serveur MLflow.
+- Déployé sur : **Google Cloud Run** (europe-west1)
+- Variables d'environnement : `MLFLOW_TRACKING_URI`
 
 ### MLOps – MLflow (déploiement séparé)
-- Suivi d’expériences.
-- Un fichier d’entrainement est présent dans les fichiers de l’API.
-- MLflow est intégré pour la traçabilité des runs.
-- Déployé sur : Azure
+- Suivi d'expériences et registre de modèles.
+- Un fichier d'entrainement (`train.py`) est présent dans les fichiers de l'API.
+- MLflow est intégré pour la traçabilité des runs et le versioning des modèles.
+- Déployé sur : **Azure Container Instances** (francecentral)
+- Configuration : Image `ghcr.io/mlflow/mlflow:v2.16.0`, port 5000
+- URL : `http://mlflow-server-mlops-sadiya-mourad.francecentral.azurecontainer.io:5000`
 
 ### Projet
 - Présentation (5 minutes).
@@ -47,26 +51,40 @@ Tous les projets sont déposés sur GitHub et les liens sont référencés dans 
 - README complet et pertinent.
 - Tous les membres ont publié sur GitHub.
 
-## 🏗️ Architecture
+## 🏗️ Architecture Multi-Cloud
 
 ```mermaid
 graph TD
-    A[Streamlit UI] -->|Upload Model/Data| B(FastAPI Backend)
-    A -->|Start Optim| B
-   A -->|Predict| B
-    B -->|Call Tools| C[MCP Server]
-    C -->|Optimize| D[Model Training]
-    C -->|Log Runs| E[MLflow Tracking Server]
-   B -->|Load Model| E
-    D -->|Metrics/Params| E
-    A -->|Visualize| E
+    A[Streamlit UI<br/>Heroku] -->|HTTPS| B(FastAPI Backend<br/>Google Cloud Run)
+    A -->|Select Model| B
+    A -->|Predict| B
+    B -->|Train Models| C[Model Training]
+    B -->|Load Model| D[MLflow Tracking Server<br/>Azure ACI]
+    C -->|Register/Log| D
+    A -->|Visualize Experiments| D
+    
+    style A fill:#7b68ee
+    style B fill:#4285f4
+    style D fill:#0078d4
 ```
 
 ### Components:
-- **Frontend (Streamlit)**: User interface for uploading models/datasets and configuring hyperparameter search spaces.
-- **Backend (FastAPI)**: Orchestrator that manages uploads and communicates with the MCP server using a stdio client.
-- **MCP Server**: Houses the "intelligence" for optimization. It provides tools for Grid Search, Random Search, and Bayesian Optimization (via Optuna).
-- **MLflow**: Centralized logging for all experiments, allowing comparison of runs and best model retrieval.
+- **Frontend (Streamlit)** - Hébergé sur **Heroku**
+  - User interface pour la sélection de modèles et les prédictions
+  - Déploiement via Heroku Container Registry
+  - Variables d'environnement : `BACKEND_URL`, `MLFLOW_URL`
+  
+- **Backend (FastAPI)** - Hébergé sur **Google Cloud Run**
+  - API REST avec endpoints `/models`, `/predict`, `/train`
+  - Charge les modèles depuis MLflow Model Registry
+  - Authentification publique, région europe-west1
+  - Variables d'environnement : `MLFLOW_TRACKING_URI`
+  
+- **MLflow** - Hébergé sur **Azure Container Instances**
+  - Tracking server pour la gestion des expériences et modèles
+  - Model Registry pour le versioning des modèles
+  - Backend SQLite + artifact storage dans `/tmp`
+  - Accès public via HTTP port 5000
 
 ## 🛠️ Setup & Installation
 
@@ -115,79 +133,96 @@ export DATA_PATH=data/fashion_mnist_agnostic.npz
 python src/api/train.py
 ```
 
-Then promote the model to the **Production** stage in MLflow UI and keep:
-`MLFLOW_MODEL_URI=models:/fashion-mnist-sklearn/Production`
 
 ## 📖 User Guide (Step-by-Step)
 
-Once all services are running, follow these steps to run your first optimization:
+Once all services are running, follow these steps:
 
 1.  **Prepare Data**: Run `python prepare_test_data.py`. This creates a `data/fashion_mnist_agnostic.npz` file.
-2.  **Access UI**: Open `http://localhost:8501` in your browser.
-3.  **Upload Dataset**:
-    *   Click on "Browse files" in the **Upload Assets** sidebar.
-    *   Select `data/fashion_mnist_agnostic.npz`.
-    *   Click the **Upload Dataset** button.
-4.  **Upload Model (Optional)**: If you have a `.pkl` or `.pth` model, you can upload it for detection.
-5.  **Configure Search**:
-    *   Select the **Model Type** (e.g., SVC).
-    *   Choose a **Search Strategy** (Grid, Random, or Bayesian).
-    *   Adjust the **Hyperparameter Space** (C values, Kernels, etc.).
-6.  **Optimize**: Click **Start Optimization**.
-7.  **Monitor**:
-    *   The right column will show "Optimization in progress".
-    *   Once finished, it displays the **Best Score** and **Best Parameters**.
-8.  **View Detail**: Open **MLflow** at `http://localhost:5000` to see the comparison of all trials.
-9.  **Predict**: Use the **Prediction** section in the UI or call the `/predict` endpoint.
+2.  **Train Models**: Run `python src/api/train.py` to train and register models in MLflow.
+3.  **Access UI**: Open the Streamlit frontend in your browser.
+4.  **Select Model**: Choose a registered model from the dropdown list (loaded from MLflow).
+5.  **Predict**: Upload test data or use sample data for predictions.
+6.  **View Experiments**: Open **MLflow** to see all experiments and model versions.
 
 ## 🔌 API Endpoints
 
-- `POST /upload-data` — upload `.npz` dataset
-- `POST /upload-model` — upload `.pkl`, `.pth`, `.h5` model
-- `POST /optimize` — run optimization via MCP tools
+- `GET /models` — liste tous les modèles enregistrés dans MLflow
 - `POST /predict` — return predictions from MLflow model
 - `GET /mlflow-info` — get tracking URI + model URI
 
-## 🔧 MCP Tools
-The project includes a dedicated MCP server (`src/mcp_server/main.py`) with the following tools:
-- `detect_model_framework`: Identifies model type from file content.
-- `grid_search_optimizer`: Exhaustive parameter search.
-- `random_search_optimizer`: Efficient randomized search.
-- `bayesian_optimizer`: Intelligent search using Optuna.
 
-## 🚢 Deployment (Docker)
+## 🚢 Deployment Multi-Cloud
 
-Pour déployer ton serveur MLflow (cible : Azure) :
+### 🔵 MLflow sur Azure Container Instances
+
+Déploiement du serveur MLflow sur Azure ACI :
 
 ```bash
-cd deploy
-docker-compose up -d
+cd mlflow_deploy
+./deploy_simple.sh
 ```
-Cela lancera un serveur MLflow sur le port 5000 avec persistance des données dans le dossier `deploy/mlflow_data`.
 
-### Backend (Docker)
+Configuration :
+- Image : `ghcr.io/mlflow/mlflow:v2.16.0`
+- Resource Group : `mlops-group`
+- Container : `mlflow-server-mlops-sadiya-mourad`
+- Backend : SQLite (`/tmp/mlflow.db`)
+- Artifacts : `/tmp/mlartifacts`
+- Port : 5000 (public)
 
-Build from the repo root so the MCP server code is included:
+### 🟢 Backend API sur Google Cloud Run
+
+Déploiement du backend FastAPI sur GCP Cloud Run :
 
 ```bash
-docker build -f src/api/Dockerfile -t mlops-backend:latest .
+cd src/api
+./deploy_gcp_local.sh
 ```
 
-### Frontend (Docker)
+Configuration :
+- Project ID : `ynov-486913`
+- Region : `europe-west1`
+- Service : `mlops-backend-api`
+- Memory : 2Gi, CPU : 1
+- Timeout : 300s
+- Auth : `--allow-unauthenticated`
+- Variables : `MLFLOW_TRACKING_URI=http://mlflow-server-mlops-sadiya-mourad.francecentral.azurecontainer.io:5000`
+
+### 🟣 Frontend sur Heroku
+
+Déploiement du frontend Streamlit sur Heroku Container Registry :
 
 ```bash
-docker build -f src/frontend/Dockerfile -t mlops-frontend:latest src/frontend
+cd src/frontend
+# Définir l'URL du backend GCP
+BACKEND_URL='https://mlops-backend-api-xxx.run.app' ./deploy_heroku.sh
 ```
 
-Set environment variables when running containers:
+Configuration :
+- App Name : `mlops-fashion-mnist-frontend` (configurable)
+- Registry : Heroku Container Registry
+- Variables automatiques :
+  - `BACKEND_URL` : URL du backend GCP Cloud Run
+  - `MLFLOW_URL` : URL du serveur MLflow Azure
 
-- `BACKEND_URL` for the frontend
-- `MLFLOW_URL` for the frontend
-- `MLFLOW_TRACKING_URI` and `MLFLOW_MODEL_URI` for the backend
+### 📋 Variables d'environnement
+
+**Frontend (Heroku)** :
+- `BACKEND_URL` : URL du backend sur Cloud Run
+- `MLFLOW_URL` : URL MLflow Azure
+
+**Backend (Cloud Run)** :
+- `MLFLOW_TRACKING_URI` : URL MLflow Azure
+
+**MLflow (Azure ACI)** :
+- Aucune variable requise (configuration via commande de démarrage)
 
 ## 📊 Features
-- **Framework Agnostic**: Supports any model type that can be optimized via the MCP tools.
-- **Real-time Logging**: All trial results are visible in the MLflow dashboard immediately.
-- **Easy Deployment**: Modular structure allows deploying the MCP server, Backend, and Frontend on different cloud services as requested.
+- **Multi-Cloud Architecture**: Frontend on Heroku, Backend on GCP, MLflow on Azure
+- **MLflow Integration**: Complete experiment tracking and model registry
+- **Real-time Predictions**: Load models from MLflow and serve predictions via FastAPI
+- **Multiple Models**: Support for SVC, RandomForest, MLP, and XGBoost models
+- **Easy Deployment**: Automated deployment scripts for each cloud provider
 
 # Projet_final_Cloud

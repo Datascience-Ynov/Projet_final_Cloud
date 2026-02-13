@@ -10,8 +10,8 @@ st.set_page_config(page_title="MLOps Optimizer", layout="wide")
 st.title("🚀 MLOps Model Optimizer")
 st.markdown("Upload your model and dataset, configure hyperparameter ranges, and watch the optimization in real-time.")
 
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
-MLFLOW_URL = os.getenv("MLFLOW_URL", "http://localhost:5000")
+BACKEND_URL = os.getenv("BACKEND_URL", "https://mlops-backend-api-2ahwjpnqfq-ew.a.run.app")
+MLFLOW_URL = os.getenv("MLFLOW_URL", "http://mlflow-server-mlops-sadiya-mourad.francecentral.azurecontainer.io:5000")
 
 # Sidebar for configuration
 with st.sidebar:
